@@ -6,6 +6,7 @@ import { applicationFactory, cas1OasysGroupFactory, risksFactory } from '../../.
 import { oasysImportReponse } from '../../../../utils/oasysImportUtils'
 import { mapApiPersonRisksForUi } from '../../../../utils/utils'
 import { itShouldHaveNextValue, itShouldHavePreviousValue } from '../../../shared'
+import config from '../../../../config'
 
 import OffenceDetails from './offenceDetails'
 
@@ -30,9 +31,12 @@ describe('OffenceDetails', () => {
 
     afterEach(() => {
       jest.resetAllMocks()
+      config.flags.oasysSixMonthRuleDisabled = false
     })
 
-    it('calls the getOasysSections  method on the client with a token and the persons CRN', async () => {
+    it('calls the getOasysSections  method on the client with a token and the persons CRN when the six month rule is enabled', async () => {
+      config.flags.oasysSixMonthRuleDisabled = false
+
       await OffenceDetails.initialize({}, application, 'some-token', fromPartial({ personService }))
 
       expect(getOasysAnswersMock).toHaveBeenCalledWith(
@@ -40,6 +44,20 @@ describe('OffenceDetails', () => {
         application.person.crn,
         'offenceDetails',
         'completed_in_last_six_months',
+        [],
+      )
+    })
+
+    it('calls the getOasysSections  method on the client with a token and the persons CRN when the six month rule is disabled', async () => {
+      config.flags.oasysSixMonthRuleDisabled = true
+
+      await OffenceDetails.initialize({}, application, 'some-token', fromPartial({ personService }))
+
+      expect(getOasysAnswersMock).toHaveBeenCalledWith(
+        'some-token',
+        application.person.crn,
+        'offenceDetails',
+        'allow_all',
         [],
       )
     })

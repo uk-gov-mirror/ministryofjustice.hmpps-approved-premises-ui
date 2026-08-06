@@ -7,6 +7,7 @@ import { itShouldHaveNextValue, itShouldHavePreviousValue } from '../../../share
 import { oasysImportReponse } from '../../../../utils/oasysImportUtils'
 import RiskManagementPlan from './riskManagementPlan'
 import { mapApiPersonRisksForUi } from '../../../../utils/utils'
+import config from '../../../../config'
 
 jest.mock('../../../../services/personService.ts')
 
@@ -28,9 +29,12 @@ describe('RiskManagement', () => {
 
     afterEach(() => {
       jest.resetAllMocks()
+      config.flags.oasysSixMonthRuleDisabled = false
     })
 
-    it('calls the getOasysSections and getPersonRisks method on the client with a token and the persons CRN', async () => {
+    it('calls the getOasysSections and getPersonRisks method on the client with a token and the persons CRN when the six month rule is enabled', async () => {
+      config.flags.oasysSixMonthRuleDisabled = false
+
       await RiskManagementPlan.initialize({}, application, 'some-token', fromPartial({ personService }))
 
       expect(getOasysGroupMock).toHaveBeenCalledWith(
@@ -38,6 +42,20 @@ describe('RiskManagement', () => {
         application.person.crn,
         'riskManagementPlan',
         'completed_in_last_six_months',
+        [],
+      )
+    })
+
+    it('calls the getOasysSections and getPersonRisks method on the client with a token and the persons CRN when the six month rule is disabled', async () => {
+      config.flags.oasysSixMonthRuleDisabled = true
+
+      await RiskManagementPlan.initialize({}, application, 'some-token', fromPartial({ personService }))
+
+      expect(getOasysGroupMock).toHaveBeenCalledWith(
+        'some-token',
+        application.person.crn,
+        'riskManagementPlan',
+        'allow_all',
         [],
       )
     })
