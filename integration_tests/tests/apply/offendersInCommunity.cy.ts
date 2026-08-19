@@ -1,33 +1,62 @@
-import { applicationFactory, risksFactory } from '../../../server/testutils/factories'
+import { addMonths, subDays } from 'date-fns'
+import { addResponsesToFormArtifact } from '../../../server/testutils/addToApplication'
+import { personFactory } from '../../../server/testutils/factories'
 import ApplyHelper from '../../helpers/apply'
-import { ListPage } from '../../pages/apply'
-import Page from '../../pages/page'
-import SubmissionConfirmation from '../../pages/apply/submissionConfirmation'
+import { DateFormats } from '../../../server/utils/dateUtils'
 import { mapApiPersonRisksForUi } from '../../../server/utils/utils'
 import { setup } from './setup'
-import { AND, GIVEN, THEN, WHEN } from '../../helpers'
+import { AND, THEN } from '../../helpers'
 
 context('Apply', () => {
   beforeEach(setup)
 
-  it('allows completion of the form', function test() {
+  it('supports offenders already in the community', function test() {
+    const person = personFactory.build({ status: 'InCommunity' })
+
+    // A 'regular' placement date (not emergency or short notice)
+    const placementDate = addMonths(new Date(), 7)
+    // A release date in the past
+    const releaseDate = subDays(new Date(), 1)
+    this.application = addResponsesToFormArtifact(this.application, {
+      task: 'basic-information',
+      page: 'placement-date',
+      keyValuePairs: {
+        ...DateFormats.dateObjectToDateInputs(placementDate, 'startDate'),
+        startDate: DateFormats.dateObjToIsoDate(placementDate),
+        startDateSameAsReleaseDate: 'no',
+      },
+    })
+    this.application = addResponsesToFormArtifact(this.application, {
+      task: 'basic-information',
+      page: 'release-date',
+      keyValuePairs: {
+        ...DateFormats.dateObjectToDateInputs(releaseDate, 'releaseDate'),
+        releaseDate: DateFormats.dateObjToIsoDate(releaseDate),
+      },
+    })
+
+    this.applicationData = this.application.data
+
+    this.application.person = person
+
     AND('I complete the application')
     const uiRisks = mapApiPersonRisksForUi(this.application.risks)
-    const apply = new ApplyHelper(this.application, this.person, this.offences)
+    const apply = new ApplyHelper(this.application, person, this.offences)
 
     apply.setupApplicationStubs(uiRisks)
     apply.startApplication()
-    apply.completeApplication()
+    apply.completeApplication({ isExceptionalCase: false, isInComunity: true })
 
     THEN('the application should be submitted to the API')
     cy.task('verifyApplicationUpdate', this.application.id).then((requests: Array<{ body: string }>) => {
       expect(requests).to.have.length(apply.numberOfPages())
       const body = JSON.parse(requests[requests.length - 1].body)
+
       expect(body).to.have.keys(
-        'data',
-        'document',
         'duration',
         'requestedPlacementPeriod',
+        'data',
+        'document',
         'apType',
         'isWomensApplication',
         'targetLocation',
@@ -44,6 +73,7 @@ context('Apply', () => {
         'noticeType',
         'licenseExpiryDate',
       )
+
       expect(body.data).to.deep.equal(this.applicationData)
     })
 
@@ -54,8 +84,8 @@ context('Apply', () => {
 
       const body = JSON.parse(requests[0].body)
       expect(body).to.have.keys(
-        'requestedPlacementPeriod',
         'duration',
+        'requestedPlacementPeriod',
         'translatedDocument',
         'apType',
         'isEmergencyApplication',
@@ -73,24 +103,5 @@ context('Apply', () => {
         'licenseExpiryDate',
       )
     })
-
-    AND('I should be taken to the confirmation page')
-    const confirmationPage = new SubmissionConfirmation()
-
-    GIVEN('there are applications in the database')
-    const applications = applicationFactory.withReleaseDate().buildList(5)
-    cy.task('stubApplications', applications)
-
-    AND('there are risks in the database')
-    const risks = risksFactory.buildList(5)
-    applications.forEach((stubbedApplication, i) => {
-      cy.task('stubPersonRisks', { person: stubbedApplication.person, risks: risks[i] })
-    })
-
-    WHEN("I click 'Back to dashboard'")
-    confirmationPage.clickBackToDashboard()
-
-    THEN('I am taken back to the dashboard')
-    Page.verifyOnPage(ListPage)
   })
 })
