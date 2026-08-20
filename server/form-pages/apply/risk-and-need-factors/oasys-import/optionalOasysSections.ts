@@ -1,5 +1,6 @@
 import {
   Cas1Application as Application,
+  Cas1OASysAssessmentMetadata,
   type Cas1OASysAssessmentSuitabilityStrategyDto,
   Cas1OASysMetadata,
   Cas1OASysSupportingInformationQuestionMetaData,
@@ -12,6 +13,7 @@ import { flattenCheckboxInput, isStringOrArrayOfStrings } from '../../../../util
 import { DataServices, type PageResponse } from '../../../../@types/ui'
 import { sentenceCase } from '../../../../utils/utils'
 import config from '../../../../config'
+import { DateFormats } from '../../../../utils/dateUtils'
 
 interface Response {
   needsLinkedToReoffending: Array<string> | string | Array<Cas1OASysSupportingInformationQuestionMetaData>
@@ -21,11 +23,16 @@ interface Response {
 interface Body {
   needsLinkedToReoffending: Array<Cas1OASysSupportingInformationQuestionMetaData>
   otherNeeds: Array<Cas1OASysSupportingInformationQuestionMetaData>
+  metaData: Cas1OASysAssessmentMetadata & { importedDate: string }
+}
+
+const formatDate = (isoDate: string) => {
+  return isoDate ? DateFormats.isoDateToUIDate(isoDate) : ''
 }
 
 @Page({
   name: 'optional-oasys-sections',
-  bodyProperties: ['needsLinkedToReoffending', 'otherNeeds'],
+  bodyProperties: ['needsLinkedToReoffending', 'otherNeeds', 'metaData'],
 })
 export default class OptionalOasysSections implements TasklistPage {
   title = 'Which of the following sections of OASys do you want to import?'
@@ -55,14 +62,8 @@ export default class OptionalOasysSections implements TasklistPage {
       : 'completed_in_last_six_months'
 
     try {
-      const {
-        supportingInformation,
-        assessmentMetadata: { hasApplicableAssessment },
-      }: Cas1OASysMetadata = await dataServices.personService.getOasysMetadata(
-        token,
-        application.person.crn,
-        suitabilityStrategy,
-      )
+      const { supportingInformation, assessmentMetadata }: Cas1OASysMetadata =
+        await dataServices.personService.getOasysMetadata(token, application.person.crn, suitabilityStrategy)
 
       const allNeedsLinkedToReoffending = supportingInformation.filter(
         section => section && section.inclusionOptional && section.oasysAnswerLinkedToReOffending,
@@ -88,7 +89,10 @@ export default class OptionalOasysSections implements TasklistPage {
 
       page.allNeedsLinkedToReoffending = allNeedsLinkedToReoffending
       page.allOtherNeeds = allOtherNeeds
-      page.oasysSuccess = hasApplicableAssessment === undefined ? true : hasApplicableAssessment
+      page.oasysSuccess =
+        assessmentMetadata.hasApplicableAssessment === undefined ? true : assessmentMetadata.hasApplicableAssessment
+
+      page.body.metaData = { ...assessmentMetadata, importedDate: DateFormats.dateObjToIsoDate(new Date()) }
     } catch (error) {
       if (error instanceof OasysNotFoundError) {
         page.oasysSuccess = false
@@ -131,7 +135,12 @@ export default class OptionalOasysSections implements TasklistPage {
 
   response() {
     const response: PageResponse = {}
-
+    if (this.body.metaData?.hasApplicableAssessment) {
+      response['OASys assessment'] = `Imported from OASys ${formatDate(this.body.metaData.importedDate)}`
+      response['OASys last updated'] = formatDate(this.body.metaData.lastUpdatedDate)
+    } else {
+      response['OASys assessment'] = 'OASys could not be imported'
+    }
     if (this.body.needsLinkedToReoffending && this.getResponseForTypeOfNeed(this.body.needsLinkedToReoffending))
       response[this.needsLinkedToReoffendingHeading] = this.getResponseForTypeOfNeed(this.body.needsLinkedToReoffending)
 
