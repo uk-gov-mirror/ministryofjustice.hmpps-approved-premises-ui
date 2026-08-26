@@ -24,6 +24,7 @@ import {
 } from '../../testutils/factories'
 import paths from '../../paths/apply'
 import managePaths from '../../paths/manage'
+import config from '../../config'
 import Apply from '../../form-pages/apply'
 import Assess from '../../form-pages/assess'
 import PlacementRequest from '../../form-pages/placement-application'
@@ -42,6 +43,7 @@ import {
   eventTypeTranslations,
   firstPageOfApplicationJourney,
   getApplicationSummary,
+  getApplicationTierValue,
   getApplicationType,
   isInapplicable,
   isWomensApplication,
@@ -49,7 +51,6 @@ import {
   mapApplicationTimelineEventsForUi,
   mapPersonalTimelineForUi,
   mapTimelineUrlsForUi,
-  tierQualificationPage,
 } from './utils'
 import { RestrictedPersonError } from '../errors'
 import { sortHeader } from '../sortHeader'
@@ -58,6 +59,7 @@ import { renderTimelineEventContent } from '../timeline'
 import { summaryListItem } from '../formUtils'
 import { fullPersonFactory } from '../../testutils/factories/person'
 import * as residentUtils from '../resident'
+import { versionedTierCell } from '../tableUtils'
 
 jest.mock('../placementRequests/placementApplicationSubmissionData')
 jest.mock('../retrieveQuestionResponseFromFormArtifact')
@@ -333,6 +335,10 @@ describe('utils', () => {
     const sortDirection = 'asc'
     const hrefPrefix = 'http://example.com'
 
+    afterEach(() => {
+      config.flags.useLiveTiers = false
+    })
+
     it('returns header values', () => {
       expect(dashboardTableHeader(sortBy, sortDirection, hrefPrefix)).toEqual([
         {
@@ -351,6 +357,14 @@ describe('utils', () => {
           text: 'Actions',
         },
       ])
+    })
+
+    it('should return the Tier column sorted on "personTier" when the useLiveTiers flag is enabled', () => {
+      config.flags.useLiveTiers = true
+
+      expect(dashboardTableHeader(sortBy, sortDirection, hrefPrefix)).toContainEqual(
+        sortHeader<ApplicationSortField>('Tier', 'personTier', sortBy, sortDirection, hrefPrefix),
+      )
     })
   })
 
@@ -385,9 +399,7 @@ describe('utils', () => {
           {
             text: applicationA.person.crn,
           },
-          {
-            html: personUtils.tierBadge('A1'),
-          },
+          versionedTierCell(applicationA.person, applicationA.risks?.tier?.value),
           {
             text: 'N/A',
           },
@@ -410,9 +422,7 @@ describe('utils', () => {
           {
             text: applicationB.person.crn,
           },
-          {
-            html: '',
-          },
+          versionedTierCell(applicationB.person, applicationB.risks?.tier?.value),
           {
             text: DateFormats.isoDateToUIDate(arrivalDate, { format: 'short' }),
           },
@@ -440,9 +450,7 @@ describe('utils', () => {
 
         const result = dashboardTableRows([application])
 
-        expect(result[0][2]).toEqual({
-          html: '',
-        })
+        expect(result[0][2]).toEqual(versionedTierCell(application.person, application.risks?.tier?.value))
       })
     })
 
@@ -456,9 +464,7 @@ describe('utils', () => {
 
         const result = dashboardTableRows([application])
 
-        expect(result[0][2]).toEqual({
-          html: '',
-        })
+        expect(result[0][2]).toEqual(versionedTierCell(application.person, application.risks?.tier?.value))
       })
     })
 
@@ -476,9 +482,7 @@ describe('utils', () => {
             {
               text: application.person.crn,
             },
-            {
-              html: personUtils.tierBadge(application.risks?.tier?.value?.level),
-            },
+            versionedTierCell(application.person, application.risks?.tier?.value),
             {
               text: DateFormats.isoDateToUIDate(application.arrivalDate, { format: 'short' }),
             },
@@ -501,7 +505,7 @@ describe('utils', () => {
     const applicationId = 'application-id'
 
     it('returns the sentence type page for an applicable application', () => {
-      jest.spyOn(personUtils, 'isApplicableTier').mockReturnValue(true)
+      jest.spyOn(personUtils, 'isApplicableTierDto').mockReturnValue(true)
       const tier = tierDtoFactory.v2Eligible().build()
       const person = personFactory.build({ tier })
 
@@ -520,7 +524,7 @@ describe('utils', () => {
 
     it('returns the is exceptional case page for an application with an unsuitable tier', () => {
       const tier = tierDtoFactory.v2Ineligible().build()
-      const person = personFactory.build({ sex: 'Male', tier })
+      const person = fullPersonFactory.build({ sex: 'Male', tier })
 
       expect(firstPageOfApplicationJourney(applicationId, person)).toEqual(
         paths.applications.pages.show({ id: applicationId, task: 'basic-information', page: 'is-exceptional-case' }),
@@ -551,7 +555,6 @@ describe('utils', () => {
 
       expect(isInapplicable(application)).toEqual(false)
     })
-
     it('should return true if the applicant has answered yes to the isExceptionalCase question and no to the agreedCaseWithManager question', () => {
       mockOptionalQuestionResponse({ isExceptionalCase: 'yes', agreedCaseWithManager: 'no' })
 
@@ -966,40 +969,14 @@ describe('utils', () => {
     })
   })
 
-  describe('tierQualificationPage', () => {
-    it('returns undefined for valid tier', () => {
-      jest.spyOn(personUtils, 'isApplicableTier').mockReturnValue(true)
-      const tier = tierDtoFactory.v2Eligible().build()
-      const person = fullPersonFactory.build({ tier })
-      const application = applicationFactory.withFullPerson().build({ person })
+  describe('getApplicationTierValue', () => {
+    it('calls getVersionedTierValue with the correct parameters from the application', () => {
+      const application = applicationFactory.build()
+      jest.spyOn(personUtils, 'getVersionedTierValue').mockReturnValue('D')
 
-      expect(tierQualificationPage(application)).toBe(undefined)
-    })
+      expect(getApplicationTierValue(application)).toEqual('D')
 
-    it('returns the "enter risk level" page for an application for a person without a tier', () => {
-      const person = fullPersonFactory.build({ tier: undefined })
-      const application = applicationFactory.withFullPerson().build({ person })
-
-      expect(tierQualificationPage(application)).toEqual(
-        paths.applications.pages.show({ id: application.id, task: 'basic-information', page: 'enter-risk-level' }),
-      )
-    })
-
-    it('returns the is exceptional case page for an application with an unsuitable tier', () => {
-      const person = fullPersonFactory.build({ sex: 'Male', tier: tierDtoFactory.v2Ineligible().build() })
-      const application = applicationFactory.build({ person })
-
-      expect(tierQualificationPage(application)).toEqual(
-        paths.applications.pages.show({ id: application.id, task: 'basic-information', page: 'is-exceptional-case' }),
-      )
-    })
-
-    it('throws an error if the person is not a Full Person', () => {
-      const restrictedPerson = restrictedPersonFactory.build()
-      const application = applicationFactory.build({ person: restrictedPerson })
-
-      expect(() => tierQualificationPage(application)).toThrowError(`CRN: ${restrictedPerson.crn} is restricted`)
-      expect(() => tierQualificationPage(application)).toThrowError(RestrictedPersonError)
+      expect(personUtils.getVersionedTierValue).toHaveBeenCalledWith(application.person, application.risks.tier.value)
     })
   })
 })

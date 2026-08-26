@@ -21,17 +21,18 @@ import type {
   SortDirection,
   Cas1ApplicationSummary,
   Cas1Application,
-  FullPerson,
   RestrictedPerson,
+  Person,
 } from '@approved-premises/api'
 import IsExceptionalCase from '../../form-pages/apply/reasons-for-placement/basic-information/isExceptionalCase'
 import paths from '../../paths/apply'
+import config from '../../config'
 
 import placementApplicationPaths from '../../paths/placementApplications'
 import {
   displayName,
-  getTierOrBlank,
   getVersionedTierOrBlank,
+  getVersionedTierValue,
   isApplicableTierDto,
   isFullPerson,
   PersonAny,
@@ -46,7 +47,7 @@ import { createNameAnchorElement } from './helpers'
 import { APPLICATION_SUITABLE, ApplicationStatusTag, applicationSuitableStatuses } from './statusTag'
 import { renderTimelineEventContent } from '../timeline'
 import { summaryListItem } from '../formUtils'
-import { htmlCell, textCell } from '../tableUtils'
+import { htmlCell, textCell, versionedTierCell } from '../tableUtils'
 import { getPlacementLink } from '../resident'
 import { RestrictedPersonError } from '../errors'
 
@@ -116,7 +117,13 @@ const dashboardTableHeader = (
     {
       text: 'CRN',
     },
-    sortHeader<ApplicationSortField>('Tier', 'tier', sortBy, sortDirection, hrefPrefix),
+    sortHeader<ApplicationSortField>(
+      'Tier',
+      config.flags.useLiveTiers ? 'personTier' : 'tier',
+      sortBy,
+      sortDirection,
+      hrefPrefix,
+    ),
     sortHeader<ApplicationSortField>('Arrival Date', 'arrivalDate', sortBy, sortDirection, hrefPrefix),
     sortHeader<ApplicationSortField>('Date of application', 'createdAt', sortBy, sortDirection, hrefPrefix),
     {
@@ -136,7 +143,7 @@ const dashboardTableRows = (
     (application): TableRow => [
       createNameAnchorElement(application.person, application, { linkInProgressApplications }),
       textCell(application.person.crn),
-      htmlCell(getTierOrBlank(application.risks?.tier?.value?.level)),
+      versionedTierCell(application.person, application.risks?.tier?.value),
       textCell(getArrivalDateorNA(application.arrivalDate)),
       textCell(DateFormats.isoDateToUIDate(application.createdAt, { format: 'short' })),
       htmlCell(new ApplicationStatusTag(application.status).html()),
@@ -195,13 +202,7 @@ const isInapplicable = (application: Application): boolean => {
   return isExceptionalCase === 'no' || (isExceptionalCase === 'yes' && agreedCaseWithManager === 'no')
 }
 
-const tierQualificationPage = (application: Cas1Application) => {
-  const person: FullPerson = application?.person as FullPerson
-
-  return tierQualificationPageTierDto(application?.id, person)
-}
-
-const tierQualificationPageTierDto = (applicationId: string, person: FullPerson) => {
+const firstPageOfApplicationJourney = (applicationId: string, person: Person) => {
   if (!isFullPerson(person)) throw new RestrictedPersonError((person as RestrictedPerson).crn)
 
   if (!person?.tier) {
@@ -211,21 +212,8 @@ const tierQualificationPageTierDto = (applicationId: string, person: FullPerson)
   if (!isApplicableTierDto(person)) {
     return paths.applications.pages.show({ id: applicationId, task: 'basic-information', page: 'is-exceptional-case' })
   }
-  return undefined
-}
 
-const firstPageOfApplicationJourney = (applicationId: string, person: FullPerson) => {
-  const firstPage = tierQualificationPageTierDto(applicationId, person)
-
-  if (firstPage) {
-    return firstPage
-  }
-
-  return paths.applications.pages.show({
-    id: applicationId,
-    task: 'basic-information',
-    page: 'confirm-your-details',
-  })
+  return paths.applications.pages.show({ id: applicationId, task: 'basic-information', page: 'confirm-your-details' })
 }
 
 const getApplicationType = (application: Application): ApplicationType => {
@@ -442,6 +430,9 @@ const appealDecisionRadioItems = (selectedOption: AppealDecision | undefined) =>
   }))
 }
 
+const getApplicationTierValue = (application: Cas1Application) =>
+  getVersionedTierValue(application.person, application.risks?.tier?.value)
+
 export {
   applicationTableRows,
   dashboardTableRows,
@@ -456,6 +447,6 @@ export {
   lengthOfStayForUI,
   applicationStatusSelectOptions,
   appealDecisionRadioItems,
-  tierQualificationPage,
   applicationSuitableStatuses,
+  getApplicationTierValue,
 }

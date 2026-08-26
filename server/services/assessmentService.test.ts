@@ -3,6 +3,7 @@ import { Request } from 'express'
 import { Cas1AssessmentAcceptance, Cas1AssessmentSummary, Cas1UpdatedClarificationNote } from '@approved-premises/api'
 
 import { fromPartial } from '@total-typescript/shoehorn'
+import { faker } from '@faker-js/faker'
 import { AssessmentClient } from '../data'
 import AssessmentService from './assessmentService'
 import {
@@ -19,9 +20,10 @@ import TasklistPage, { TasklistPageInterface } from '../form-pages/tasklistPage'
 import { DataServices, PaginatedResponse, TaskListErrors } from '../@types/ui'
 import { ValidationError } from '../utils/errors'
 import { ApplicationOrAssessmentResponse } from '../utils/applications/utils'
-import { applicationAccepted } from '../utils/assessments/decisionUtils'
+import { applicationAccepted, decisionFromAssessment } from '../utils/assessments/decisionUtils'
 import { getResponses } from '../utils/applications/getResponses'
 import { getResponseForPage } from '../utils/applications/getResponseForPage'
+import { ApplicationService } from './index'
 
 jest.mock('../data/assessmentClient.ts')
 jest.mock('../data/personClient.ts')
@@ -32,6 +34,9 @@ jest.mock('../utils/applications/getResponses')
 jest.mock('../utils/applications/getResponseForPage')
 jest.mock('../utils/assessments/acceptanceData')
 jest.mock('../utils/assessments/decisionUtils')
+
+const applicationService = createMock<ApplicationService>({})
+const dataServices = { applicationService } as DataServices
 
 describe('AssessmentService', () => {
   const assessmentClient = new AssessmentClient(null) as jest.Mocked<AssessmentClient>
@@ -102,7 +107,6 @@ describe('AssessmentService', () => {
     })
 
     it("should call a page's initialize method if it exists", async () => {
-      const dataServices = createMock<DataServices>({}) as DataServices
       ;(getBody as jest.Mock).mockReturnValue(request.body)
 
       const TestPage = { initialize: jest.fn() } as unknown as TasklistPageInterface
@@ -198,14 +202,21 @@ describe('AssessmentService', () => {
         ...document,
         'make-a-decision': [response],
       }
+      const rejectionReason = faker.helpers.arrayElement(['accommodationNeedOnly', 'needsCannotBeMet'])
+
       ;(applicationAccepted as jest.Mock).mockReturnValue(false)
       ;(getResponses as jest.Mock).mockReturnValue(document)
       ;(getResponseForPage as jest.Mock).mockReturnValue(response)
+      ;(decisionFromAssessment as jest.Mock).mockReturnValue(rejectionReason)
 
       await service.submit(token, assessment)
 
       expect(assessmentClientFactory).toHaveBeenCalledWith(token)
-      expect(assessmentClient.rejection).toHaveBeenCalledWith(assessment.id, document, response.Decision)
+      expect(assessmentClient.rejection).toHaveBeenCalledWith(assessment.id, {
+        document,
+        rejectionRationale: response.Decision,
+        rejectionReason,
+      })
       expect(placementRequestData).not.toHaveBeenCalled()
     })
   })

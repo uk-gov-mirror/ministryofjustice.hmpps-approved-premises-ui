@@ -35,7 +35,10 @@ import {
   UserQualification,
   LocalAuthorityArea,
   type Cas1OASysAssessmentSuitabilityStrategyDto,
-  Cas1Application,
+  type Cas1Application as Application,
+  type SentenceTypeOption,
+  Cas1RequestsForPlacementDurationsCalculationResponseDto,
+  Cas1OASysAssessmentMetadata,
 } from '@approved-premises/api'
 import type { Request } from 'express'
 import { Session } from 'express-session'
@@ -133,6 +136,12 @@ export type TableRow = Array<TableCell>
 export type Table = {
   head: Array<TableCell>
   rows: Array<TableRow>
+}
+
+export type ColumnDefinition<T extends string = string> = {
+  title: string
+  fieldName: T
+  sortable: boolean
 }
 
 export type RadioItemButton = (
@@ -338,8 +347,14 @@ export type DataServices = Partial<{
     ) => Promise<Cas1OASysGroup>
   }
   applicationService: {
-    getDocuments: (token: string, application: Cas1Application) => Promise<Array<Document>>
-    findApplication: (token: string, id: string) => Promise<Cas1Application>
+    getDocuments: (token: string, application: Application) => Promise<Array<Document>>
+    findApplication: (token: string, id: string) => Promise<Application>
+    getPlacementDuration: (
+      token: string,
+      applicationId: string,
+      apType: ApType,
+      sentenceType: SentenceTypeOption,
+    ) => Promise<Cas1RequestsForPlacementDurationsCalculationResponseDto>
   }
   userService: {
     getUserById: (token: string, id: string) => Promise<User>
@@ -467,7 +482,9 @@ export type MiddlewareSpec = {
 
 export type PlacementRequestDashboardSearchOptions = {
   crnOrName?: string
-  tier?: RiskTierLevel
+  tier?: string
+  personTier?: string
+  tierOnApplicationCreation?: string
   arrivalDateStart?: string
   arrivalDateEnd?: string
   status?: PlacementRequestStatus
@@ -628,3 +645,5 @@ export type ApprovedPremises = {
 }
 
 type v2SortField = Exclude<Cas1SpaceBookingSummarySortField, 'personTier'>
+
+type OasysMetaData = Cas1OASysAssessmentMetadata & { importedDate: string }

@@ -1,4 +1,5 @@
 import { addDays, addMonths, subDays } from 'date-fns'
+import { FullPerson } from '@approved-premises/api'
 import { addResponseToFormArtifact, addResponsesToFormArtifact } from '../../../server/testutils/addToApplication'
 import {
   activeOffenceFactory,
@@ -22,7 +23,6 @@ import SubmissionConfirmation from '../../pages/apply/submissionConfirmation'
 import { mapApiPersonRisksForUi } from '../../../server/utils/utils'
 import { setup } from './setup'
 import { AND, GIVEN, THEN, WHEN } from '../../helpers'
-import { fullPersonFactory } from '../../../server/testutils/factories/person'
 
 context('Apply', () => {
   beforeEach(setup)
@@ -139,7 +139,39 @@ context('Apply', () => {
     apply.clickBasicInformation()
 
     THEN('I should see the is exceptional case page')
-    Page.verifyOnPage(ApplyPages.IsExceptionalCasePage, this.application)
+    Page.verifyOnPage(ApplyPages.IsExceptionalCasePage, application)
+  })
+
+  it('If user navigates away from application on confirm details page for eligible CRN, return to confirm details page', function test() {
+    GIVEN('the person has an eligible risk tier')
+
+    const tier = tierDtoFactory.v2Eligible().build()
+    this.application.risks = risksFactory.build({
+      crn: this.person.crn,
+      tier: tierEnvelopeFactory.build({ value: { level: tier.tierScore } }),
+    })
+    this.person.sex = 'Male'
+    this.person.tier = tier
+    const application = { ...this.application, person: { ...this.person, tier } }
+    cy.task('stubApplicationGet', { application })
+    cy.task('stubApplications', [application])
+
+    AND('I start the application and left')
+    const apply = new ApplyHelper(application, application.person, this.offences)
+    apply.setupApplicationStubs()
+    apply.startApplication()
+
+    AND('I visit the list page')
+    const listPage = ListPage.visit([application], [], [])
+
+    WHEN('I click the application from list')
+    listPage.clickApplication(application)
+
+    AND('I click the basic information')
+    apply.clickBasicInformation()
+
+    THEN('I should see the is exceptional case page')
+    Page.verifyOnPage(ApplyPages.ConfirmYourDetailsPage, this.application)
   })
 
   it('throws an error if the the CRN entered is an LAO', function test() {
@@ -192,19 +224,6 @@ context('Apply', () => {
     Page.verifyOnPage(ConfirmYourDetailsPage, this.application)
   })
 
-  it(`allows the user to specify if the risk level if the person does not have a tier`, function test() {
-    AND('that person does not have an eligible risk tier')
-    const person = fullPersonFactory.build({ tier: undefined })
-    this.application.person = person
-
-    const apply = new ApplyHelper(this.application, person, this.offences)
-    apply.setupApplicationStubs()
-    apply.startApplication()
-
-    THEN('I should be able to confirm that the case is exceptional')
-    apply.completeMissingTierSection()
-  })
-
   it(`allows the user to specify if the case is exceptional if the offender's tier is not eligible`, function test() {
     GIVEN('the person does not have an eligible risk tier')
     const tier = tierDtoFactory.v2Ineligible().build()
@@ -236,14 +255,14 @@ context('Apply', () => {
     apply.startApplication()
 
     THEN('I should be prompted to confirm that the case is exceptional')
-    const isExceptionalCasePage = Page.verifyOnPage(IsExceptionalCasePage)
+    const isExceptionalCasePage = Page.verifyOnPage(IsExceptionalCasePage, application)
 
     AND('I select no')
     isExceptionalCasePage.completeForm('no')
     isExceptionalCasePage.clickSubmit()
 
     THEN('I should be told the application is not eligible')
-    Page.verifyOnPage(NotEligiblePage)
+    Page.verifyOnPage(NotEligiblePage, application)
   })
 
   it('allows completion of application emergency flow', function test() {
@@ -413,5 +432,48 @@ context('Apply', () => {
 
     THEN('should display No documents have been imported from Delius message will be displayed')
     apply.verifyNoDocumentsDisplayed()
+  })
+
+  it('Follows the CAS2 interstitial page route', function test() {
+    this.person.tier = tierDtoFactory.build({ version: 'V3', tierScore: 'B' })
+    const apply = new ApplyHelper({ ...this.application, person: this.person }, this.person, this.offences)
+    apply.setupApplicationStubs()
+
+    WHEN('I start an application and confirm the person')
+    apply.enterCrnDetails()
+    Page.verifyOnPage(ApplyPages.ConfirmDetailsPage, this.person as FullPerson).clickSaveAndContinue()
+
+    THEN('I am on the blue interstitial CAS2 page')
+    const eligibilityCheckPAge = Page.verifyOnPage(ApplyPages.EligibilityCheckPage, this.person as FullPerson)
+    eligibilityCheckPAge.checkContent()
+
+    WHEN('I click continue')
+    eligibilityCheckPAge.clickLink('Continue')
+
+    THEN('I am on the CAS2 choice page')
+    const cas2OptionPage = Page.verifyOnPage(ApplyPages.Cas2OptionPage, this.person)
+
+    AND('The page should contain the correct content')
+    cas2OptionPage.checkContent()
+
+    WHEN('I click the link to continue with CAS1 application')
+    cas2OptionPage.clickLink('Apply for Approved Premises (CAS1) anyway')
+
+    THEN('I am on the Select offences page')
+    Page.verifyOnPage(ApplyPages.SelectOffencePage, this.person, this.offences)
+  })
+
+  it('Stops the application if V3 tier is MISSING', function test() {
+    this.person.tier = tierDtoFactory.build({ version: 'V3', tierScore: 'MISSING' })
+    const apply = new ApplyHelper({ ...this.application, person: this.person }, this.person, this.offences)
+    apply.setupApplicationStubs()
+
+    WHEN('I start an application and confirm the person')
+    apply.enterCrnDetails()
+    Page.verifyOnPage(ApplyPages.ConfirmDetailsPage, this.person as FullPerson).clickSaveAndContinue()
+
+    THEN('I am on the blue interstitial CAS2 page')
+    const eligibilityCheckPage = Page.verifyOnPage(ApplyPages.EligibilityCheckPage, this.person as FullPerson)
+    eligibilityCheckPage.checkDashboardLink()
   })
 })

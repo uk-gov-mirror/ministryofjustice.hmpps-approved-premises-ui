@@ -23,7 +23,7 @@ const tierBadge = (tier: string): string => {
 const tierBadgeV3 = (tier: string): string => {
   if (!tier) return ''
 
-  return `<span class="moj-badge">${tier}</span>`
+  return `<span>${tier}</span>`
 }
 
 const versionedTierBadge = (tier: TierDto): string => {
@@ -37,12 +37,12 @@ const isApplicableTierDto = (person: FullPerson) => {
   const { version, tierScore } = person.tier || {}
 
   if (version === 'V2') {
-    return isApplicableTier(person.sex, tierScore)
+    return isApplicableV2Tier(person.sex, tierScore)
   }
-  return ['A', 'B', 'C'].includes(tierScore)
+  return tierScore === 'A'
 }
 
-const isApplicableTier = (sex: string, tier: string): boolean => {
+const isApplicableV2Tier = (sex: string, tier: string): boolean => {
   const applicableTiersAll = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3']
   const applicableTiersWomen = ['C3']
 
@@ -135,7 +135,7 @@ const personTier = (person: Person | PersonSummary): TierDto => {
  */
 const getTierOrBlank = (tier: string | null | undefined) => (tier ? tierBadge(tier) : '')
 
-const getVersionedTierOrBlank = (person: Person | PersonSummary, tierOnApplicationCreation?: RiskTier) => {
+const getVersionedTierOrBlank = (person: Person | PersonSummary, tierOnApplicationCreation?: Partial<RiskTier>) => {
   if (!config.flags.useLiveTiers) {
     return getTierOrBlank(tierOnApplicationCreation?.level)
   }
@@ -155,7 +155,7 @@ export {
   versionedTierBadge,
   getTierOrBlank,
   getVersionedTierOrBlank,
-  isApplicableTier,
+  isApplicableV2Tier,
   isApplicableTierDto,
   isFullPerson,
   displayName,
